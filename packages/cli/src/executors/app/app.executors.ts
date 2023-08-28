@@ -41,7 +41,7 @@ export class AppExecutors {
   private ensureAppDir = async (appId: string) => {
     const { rootFolderHost } = getEnv();
 
-    const { appDirPath, repoPath } = this.getAppPaths(appId);
+    const { appDirPath, appDataDirPath, repoPath } = this.getAppPaths(appId);
     const dockerFilePath = path.join(rootFolderHost, 'apps', appId, 'docker-compose.yml');
 
     if (!(await pathExists(dockerFilePath))) {
@@ -52,6 +52,14 @@ export class AppExecutors {
       // Copy app folder from repo
       this.logger.info(`Copying app ${appId} from repo ${getEnv().appsRepoId}`);
       await fs.promises.cp(repoPath, appDirPath, { recursive: true });
+    }
+
+    try {
+      // TODO: Find a better way to handle folder permissions without chmodding the whole folder
+      // Maybe creating the folder with the right permissions in the first place?
+      await fs.promises.chmod(appDataDirPath, 0o777);
+    } catch (err) {
+      this.logger.error(`Error chmodding app data dir for app ${appId}: ${err}`);
     }
   };
 
@@ -94,7 +102,7 @@ export class AppExecutors {
 
       // Create folder app-data folder
       this.logger.info(`Creating folder ${appDataDirPath}`);
-      await fs.promises.mkdir(appDataDirPath, { recursive: true });
+      await fs.promises.mkdir(appDataDirPath, { recursive: true, mode: 0o777 });
 
       // Create app.env file
       this.logger.info(`Creating app.env file for app ${appId}`);
@@ -105,6 +113,8 @@ export class AppExecutors {
       if (!(await pathExists(`${appDataDirPath}/data`))) {
         await copyDataDir(appId);
       }
+
+      await this.ensureAppDir(appId);
 
       // run docker-compose up
       this.logger.info(`Running docker-compose up for app ${appId}`);
